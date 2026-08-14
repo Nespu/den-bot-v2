@@ -69,8 +69,19 @@ class OverlayService : Service() {
         val data = intent?.getParcelableExtra<Intent>("data")
         if (resultCode != -1 && data != null) {
             val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = mgr.getMediaProjection(resultCode, data)
-            handler.postDelayed({ setupImageReader() }, 800)
+            try {
+                mediaProjection = mgr.getMediaProjection(resultCode, data)
+                // Android 14+ requires registering a callback before creating VirtualDisplay
+                mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        virtualDisplay?.release()
+                        imageReader?.close()
+                    }
+                }, handler)
+                handler.postDelayed({ setupImageReader() }, 300)
+            } catch (e: Exception) {
+                updateStatus("❌ Error MediaProjection: ${e.message}")
+            }
         }
         showFab()
         return START_STICKY
@@ -159,18 +170,34 @@ class OverlayService : Service() {
     }
 
     private fun setupImageReader() {
-        imageReader?.close()
-        imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-        virtualDisplay?.release()
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "DenBotCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader!!.surface, null, null
-        )
+        try {
+            imageReader?.close()
+            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+            virtualDisplay?.release()
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "DenBotCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader!!.surface, null, handler
+            )
+            if (virtualDisplay == null) {
+                updateStatus("❌ VirtualDisplay null — permiso no otorgado")
+            }
+        } catch (e: Exception) {
+            updateStatus("❌ setupImageReader: ${e.message}")
+        }
     }
 
     private fun captureRegion(): Bitmap? {
-        Thread.sleep(150)
-        val image = imageReader?.acquireLatestImage() ?: return null
+        if (imageReader == null || virtualDisplay == null) {
+            return null
+        }
+        // Try up to 5 times with delay, since first frames may not be ready
+        var image: android.media.Image? = null
+        for (attempt in 1..5) {
+            Thread.sleep(200)
+            image = imageReader?.acquireLatestImage()
+            if (image != null) break
+        }
+        if (image == null) return null
         return try {
             val planes = image.planes
             val buffer = planes[0].buffer
@@ -196,7 +223,11 @@ class OverlayService : Service() {
         Thread {
             try {
                 val bmp = captureRegion()
-                if (bmp == null) { handler.post { updateStatus("❌ Sin captura"); analyzing = false }; return@Thread }
+                if (bmp == null) {
+                    val reason = if (imageReader == null) "motor de captura no iniciado" else "sin frames disponibles"
+                    handler.post { updateStatus("❌ Sin captura ($reason)"); analyzing = false }
+                    return@Thread
+                }
                 val fen = sendToClaudeVision(bmp)
                 bmp.recycle()
                 if (fen.isNullOrEmpty() || !fen.contains("/")) {
