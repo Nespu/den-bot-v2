@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.DenBot" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#c8952e</item>
+        <item name="colorPrimaryVariant">#e8b84b</item>
+        <item name="colorOnPrimary">#0e0b08</item>
+        <item name="android:windowBackground">#0e0b08</item>
+        <item name="android:statusBarColor">#0e0b08</item>
+    </style>
+    <style name="Theme.Transparent" parent="Theme.DenBot">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>
