@@ -71,7 +71,11 @@ class OverlayService : Service() {
             val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             try {
                 mediaProjection = mgr.getMediaProjection(resultCode, data)
-                // Android 14+ requires registering a callback before creating VirtualDisplay
+                if (mediaProjection == null) {
+                    toastMsg("❌ mediaProjection es null tras getMediaProjection")
+                } else {
+                    toastMsg("✅ MediaProjection obtenido")
+                }
                 mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                     override fun onStop() {
                         virtualDisplay?.release()
@@ -80,11 +84,17 @@ class OverlayService : Service() {
                 }, handler)
                 handler.postDelayed({ setupImageReader() }, 300)
             } catch (e: Exception) {
-                updateStatus("❌ Error MediaProjection: ${e.message}")
+                toastMsg("❌ Excepción MediaProjection: ${e.message}")
             }
+        } else {
+            toastMsg("⚠ resultCode=$resultCode o data=null — permiso no llegó")
         }
         showFab()
         return START_STICKY
+    }
+
+    private fun toastMsg(msg: String) {
+        handler.post { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -179,10 +189,12 @@ class OverlayService : Service() {
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader!!.surface, null, handler
             )
             if (virtualDisplay == null) {
-                updateStatus("❌ VirtualDisplay null — permiso no otorgado")
+                toastMsg("❌ VirtualDisplay null — createVirtualDisplay falló")
+            } else {
+                toastMsg("✅ VirtualDisplay creado — captura lista")
             }
         } catch (e: Exception) {
-            updateStatus("❌ setupImageReader: ${e.message}")
+            toastMsg("❌ setupImageReader excepción: ${e.message}")
         }
     }
 
